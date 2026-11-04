@@ -7,11 +7,14 @@ import java.net.URLEncoder
 import java.util.Locale
 import org.json.JSONObject
 
-internal data class WireMessage(val id: Long, val sender: String, val body: String, val clientId: String?)
+internal data class WireMessage(val id: Long, val sender: String, val body: String, val clientId: String?, val at: String? = null)
 
 internal data class WireConfig(val title: String?, val accent: String?, val welcome: String?)
 
-internal data class InitResult(val token: String?, val config: WireConfig?, val messages: List<WireMessage>)
+internal data class InitResult(val token: String?, val config: WireConfig?, val messages: List<WireMessage>, val typing: Boolean = false, val seenAt: String? = null)
+
+/** A poll: new messages, whether the owner is typing, and when the owner last opened the conversation. */
+internal data class PollResult(val messages: List<WireMessage>, val typing: Boolean, val seenAt: String?)
 
 /** The server refused the request (too fast, too long, app not found...). Retrying won't help. */
 internal class ServerRefused(message: String) : Exception(message)
@@ -55,6 +58,7 @@ internal class OctokanClient(private val appId: String, baseUrl: String, var tok
         sender = o.getString("sender"),
         body = o.getString("body"),
         clientId = o.optString("clientId").takeIf { it.isNotBlank() && it != "null" },
+        at = o.optString("at").takeIf { it.isNotBlank() && it != "null" },
     )
 
     private fun parseList(json: JSONObject): List<WireMessage> {
@@ -78,11 +82,22 @@ internal class OctokanClient(private val appId: String, baseUrl: String, var tok
             token = json.optString("token").takeIf { it.isNotBlank() && it != "null" },
             config = c?.let { WireConfig(it.optString("title").ifBlank { null }, it.optString("accent").ifBlank { null }, it.optString("welcome").ifBlank { null }) },
             messages = parseList(json),
+            typing = json.optBoolean("typing", false),
+            seenAt = json.optString("seenAt").takeIf { it.isNotBlank() && it != "null" },
         )
     }
 
     @Throws(IOException::class, ServerRefused::class)
-    fun messages(after: Long): List<WireMessage> = parseList(call("messages", "GET", query = "&after=$after"))
+    fun messages(after: Long): PollResult {
+        val json = call("messages", "GET", query = "&after=$after")
+        return PollResult(parseList(json), json.optBoolean("typing", false), json.optString("seenAt").takeIf { it.isNotBlank() && it != "null" })
+    }
+
+    /** Tells the owner the person is typing. Fire and forget. */
+    @Throws(IOException::class, ServerRefused::class)
+    fun typing() {
+        call("typing", "POST", body = JSONObject())
+    }
 
     @Throws(IOException::class, ServerRefused::class)
     fun send(text: String, clientId: String): WireMessage? =

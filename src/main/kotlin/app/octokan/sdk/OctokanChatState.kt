@@ -17,7 +17,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-data class OctokanMessage(val id: String, val serverId: Long?, val fromVisitor: Boolean, val body: String, val pending: Boolean)
+data class OctokanMessage(val id: String, val serverId: Long?, val fromVisitor: Boolean, val body: String, val pending: Boolean, val atMillis: Long = System.currentTimeMillis())
 
 private data class Queued(val clientId: String, val body: String)
 
@@ -29,11 +29,14 @@ class OctokanChatViewModel : ViewModel() {
     var welcome by mutableStateOf("Hey, something not working? Tell us."); private set
     var ready by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
+    var typing by mutableStateOf(false); private set // the owner is typing a reply
+    var seenAtMillis by mutableStateOf<Long?>(null); private set // when the owner last opened the conversation
 
     private var client: OctokanClient? = null
     private var polling: Job? = null
     private var queue = mutableListOf<Queued>()
     private var lastServerId = 0L
+    private var typingSentAt = 0L
 
     fun start() {
         if (client != null) return
@@ -54,6 +57,8 @@ class OctokanChatViewModel : ViewModel() {
                 res.token?.let { c.token = it; Octokan.saveToken(appId, it) }
                 apply(res.config)
                 merge(res.messages)
+                typing = res.typing
+                seenAtMillis = parseIso(res.seenAt)
                 queue.filter { q -> messages.none { it.id == q.clientId } }
                     .forEach { messages = messages + OctokanMessage(it.clientId, null, true, it.body, true) }
                 error = null
@@ -74,6 +79,15 @@ class OctokanChatViewModel : ViewModel() {
         polling?.cancel()
         polling = null
         client = null
+    }
+
+    /** Call while the person types. Tells the owner "typing...", at most every three seconds. */
+    fun notifyTyping() {
+        val c = client ?: return
+        val now = System.currentTimeMillis()
+        if (c.token == null || now - typingSentAt < 3_000) return
+        typingSentAt = now
+        viewModelScope.launch { runCatching { withContext(Dispatchers.IO) { c.typing() } } }
     }
 
     fun send(raw: String) {
@@ -126,7 +140,7 @@ class OctokanChatViewModel : ViewModel() {
         polling?.cancel()
         polling = viewModelScope.launch {
             while (isActive) {
-                delay(4_000)
+                delay(3_000)
                 poll()
             }
         }
@@ -136,7 +150,10 @@ class OctokanChatViewModel : ViewModel() {
         val c = client ?: return
         if (queue.isNotEmpty()) flush()
         try {
-            merge(withContext(Dispatchers.IO) { c.messages(lastServerId) })
+            val r = withContext(Dispatchers.IO) { c.messages(lastServerId) }
+            merge(r.messages)
+            typing = r.typing
+            seenAtMillis = parseIso(r.seenAt) ?: seenAtMillis
         } catch (e: Exception) {
             // keep polling; the next round will catch up
         }
@@ -146,7 +163,7 @@ class OctokanChatViewModel : ViewModel() {
         var list = messages
         for (m in incoming) {
             lastServerId = maxOf(lastServerId, m.id)
-            val item = OctokanMessage(m.clientId ?: "s${m.id}", m.id, m.sender == "visitor", m.body, false)
+            val item = OctokanMessage(m.clientId ?: "s${m.id}", m.id, m.sender == "visitor", m.body, false, parseIso(m.at) ?: System.currentTimeMillis())
             val i = list.indexOfFirst { it.id == item.id || (it.serverId != null && it.serverId == m.id) }
             list = if (i >= 0) list.toMutableList().also { it[i] = item } else list + item
         }
@@ -185,4 +202,13 @@ internal fun parseColor(hex: String): Color? {
     if (s.length != 6) return null
     val v = s.toLongOrNull(16) ?: return null
     return Color(0xFF000000 or v)
+}
+
+internal fun parseIso(iso: String?): Long? {
+    if (iso == null || iso.length < 19) return null
+    return runCatching {
+        val f = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+        f.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        f.parse(iso.substring(0, 19))?.time
+    }.getOrNull()
 }
