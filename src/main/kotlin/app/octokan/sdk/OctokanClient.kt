@@ -7,7 +7,10 @@ import java.net.URLEncoder
 import java.util.Locale
 import org.json.JSONObject
 
-internal data class WireMessage(val id: Long, val sender: String, val body: String, val clientId: String?, val at: String? = null)
+/** A photo, voice note or file attached to a message. `url` is a link that lasts about an hour. */
+internal data class WireAttachment(val name: String?, val type: String?, val size: Long?, val url: String?)
+
+internal data class WireMessage(val id: Long, val sender: String, val body: String, val clientId: String?, val at: String? = null, val kind: String = "text", val attachment: WireAttachment? = null)
 
 internal data class WireConfig(val title: String?, val accent: String?, val welcome: String?)
 
@@ -59,6 +62,15 @@ internal class OctokanClient(private val appId: String, baseUrl: String, var tok
         body = o.getString("body"),
         clientId = o.optString("clientId").takeIf { it.isNotBlank() && it != "null" },
         at = o.optString("at").takeIf { it.isNotBlank() && it != "null" },
+        kind = o.optString("kind").takeIf { it.isNotBlank() && it != "null" } ?: "text",
+        attachment = o.optJSONObject("attachment")?.let { a ->
+            WireAttachment(
+                name = a.optString("name").takeIf { it.isNotBlank() && it != "null" },
+                type = a.optString("type").takeIf { it.isNotBlank() && it != "null" },
+                size = if (a.has("size") && !a.isNull("size")) a.optLong("size") else null,
+                url = a.optString("url").takeIf { it.isNotBlank() && it != "null" },
+            )
+        },
     )
 
     private fun parseList(json: JSONObject): List<WireMessage> {
@@ -88,8 +100,9 @@ internal class OctokanClient(private val appId: String, baseUrl: String, var tok
     }
 
     @Throws(IOException::class, ServerRefused::class)
-    fun messages(after: Long): PollResult {
-        val json = call("messages", "GET", query = "&after=$after")
+    fun messages(after: Long, peek: Boolean = false): PollResult {
+        // peek is the unread badge checking in while the chat is closed: it never counts as the replies being seen
+        val json = call("messages", "GET", query = "&after=$after${if (peek) "&peek=1" else ""}")
         return PollResult(parseList(json), json.optBoolean("typing", false), json.optString("seenAt").takeIf { it.isNotBlank() && it != "null" })
     }
 

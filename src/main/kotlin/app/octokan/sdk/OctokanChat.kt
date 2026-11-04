@@ -13,6 +13,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -47,6 +49,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,12 +64,23 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import java.net.URL
+import java.text.SimpleDateFormat
+import android.content.Intent
+import android.graphics.BitmapFactory
+import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -273,12 +288,9 @@ private fun Bubble(row: ChatRow.Msg, accent: Color, initial: String) {
             if (!mine) {
                 if (row.ends) Avatar(accent, initial, 28, 12) else Spacer(Modifier.size(28.dp))
             }
-            Text(
-                m.body,
-                color = if (mine) Color.White else Ink,
-                fontSize = 16.sp,
-                modifier = Modifier.widthIn(max = 290.dp).alpha(if (m.pending) 0.65f else 1f).clip(shape).background(if (mine) accent else Soft).padding(horizontal = 14.dp, vertical = 9.dp),
-            )
+            Box(Modifier.widthIn(max = 290.dp).alpha(if (m.pending) 0.65f else 1f).clip(shape).background(if (mine) accent else Soft).padding(horizontal = 14.dp, vertical = 9.dp)) {
+                MessageContent(m, mine)
+            }
         }
         if (row.ends || row.status != null) {
             val seen = row.status == "✓✓ Seen"
@@ -290,6 +302,58 @@ private fun Bubble(row: ChatRow.Msg, accent: Color, initial: String) {
                 modifier = Modifier.padding(top = 3.dp, start = if (mine) 0.dp else 36.dp),
             )
         }
+    }
+}
+
+private fun bytesLabel(n: Long): String = if (n > 1_048_576) "%.1f MB".format(n / 1_048_576.0) else "${maxOf(1L, n / 1024)} KB"
+
+/** A message's content: its text, or a photo, a voice note or a file that opens when tapped. */
+@Composable
+private fun MessageContent(m: OctokanMessage, mine: Boolean) {
+    val color = if (mine) Color.White else Ink
+    val a = m.attachment
+    if (a == null || m.kind == "text") {
+        Text(m.body, color = color, fontSize = 16.sp)
+        return
+    }
+    val context = LocalContext.current
+    val open = { a.url?.let { u -> runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }; Unit }
+    val caption = if (m.body in setOf("📷 Photo", "🎤 Voice message", "📎 ${a.name}")) "" else m.body
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (m.kind == "image" && a.url != null) {
+            val bmp by produceState<ImageBitmap?>(null, a.url) {
+                value = withContext(Dispatchers.IO) { runCatching { URL(a.url).openStream().use { BitmapFactory.decodeStream(it) }?.asImageBitmap() }.getOrNull() }
+            }
+            Box(Modifier.size(220.dp, 160.dp).clip(RoundedCornerShape(12.dp)).background(Color.Black.copy(alpha = 0.08f)).clickable { open() }) {
+                bmp?.let { Image(it, contentDescription = a.name ?: "Photo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+            }
+        } else {
+            Row(
+                Modifier.clip(RoundedCornerShape(12.dp)).background(if (mine) Color.White.copy(alpha = 0.18f) else Color.Black.copy(alpha = 0.06f)).clickable { open() }.padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(if (m.kind == "audio") "🎤" else "📎", fontSize = 20.sp)
+                Column {
+                    Text(if (m.kind == "audio") "Voice message" else a.name ?: "File", color = color, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text(if (m.kind == "audio") "Tap to play" else a.size?.let { bytesLabel(it) } ?: "Tap to open", color = color.copy(alpha = 0.7f), fontSize = 11.sp)
+                }
+            }
+        }
+        if (caption.isNotEmpty()) Text(caption, color = color, fontSize = 16.sp)
+    }
+}
+
+/**
+ * A red badge with the number of unread replies from support, or nothing when there are none. Place it over your own
+ * chat icon, and call `Octokan.watchUnread()` once so the count stays fresh while the chat is closed.
+ */
+@Composable
+fun OctokanUnreadBadge(modifier: Modifier = Modifier) {
+    val n by Octokan.unread.collectAsState()
+    if (n <= 0) return
+    Box(modifier.defaultMinSize(minWidth = 22.dp, minHeight = 22.dp).clip(CircleShape).background(Color(0xFFFF3B24)).padding(horizontal = 6.dp), contentAlignment = Alignment.Center) {
+        Text(if (n > 9) "9+" else "$n", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
     }
 }
 

@@ -36,7 +36,7 @@ afterEvaluate {
             register<MavenPublication>("release") {
                 groupId = "com.github.infectedlabs"
                 artifactId = "octokan-android"
-                version = "0.1.2"
+                version = "0.1.3"
                 from(components["release"])
                 pom {
                     name.set("Octokan Android SDK")

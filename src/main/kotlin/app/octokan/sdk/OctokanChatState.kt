@@ -17,7 +17,18 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-data class OctokanMessage(val id: String, val serverId: Long?, val fromVisitor: Boolean, val body: String, val pending: Boolean, val atMillis: Long = System.currentTimeMillis())
+data class OctokanAttachment(val name: String?, val type: String?, val size: Long?, val url: String?)
+
+data class OctokanMessage(
+    val id: String,
+    val serverId: Long?,
+    val fromVisitor: Boolean,
+    val body: String,
+    val pending: Boolean,
+    val atMillis: Long = System.currentTimeMillis(),
+    val kind: String = "text", // text, image, audio or file
+    val attachment: OctokanAttachment? = null,
+)
 
 private data class Queued(val clientId: String, val body: String)
 
@@ -40,6 +51,7 @@ class OctokanChatViewModel : ViewModel() {
 
     fun start() {
         if (client != null) return
+        Octokan.chatOpened()
         val appId = Octokan.appId
         val baseUrl = Octokan.baseUrl
         if (appId == null || baseUrl == null) {
@@ -76,6 +88,7 @@ class OctokanChatViewModel : ViewModel() {
     }
 
     fun stop() {
+        if (client != null) Octokan.chatClosed()
         polling?.cancel()
         polling = null
         client = null
@@ -163,11 +176,20 @@ class OctokanChatViewModel : ViewModel() {
         var list = messages
         for (m in incoming) {
             lastServerId = maxOf(lastServerId, m.id)
-            val item = OctokanMessage(m.clientId ?: "s${m.id}", m.id, m.sender == "visitor", m.body, false, parseIso(m.at) ?: System.currentTimeMillis())
+            val item = OctokanMessage(
+                m.clientId ?: "s${m.id}", m.id, m.sender == "visitor", m.body, false, parseIso(m.at) ?: System.currentTimeMillis(),
+                m.kind, m.attachment?.let { OctokanAttachment(it.name, it.type, it.size, it.url) },
+            )
             val i = list.indexOfFirst { it.id == item.id || (it.serverId != null && it.serverId == m.id) }
             list = if (i >= 0) list.toMutableList().also { it[i] = item } else list + item
         }
         messages = list
+        markRead()
+    }
+
+    /** Remembers how far the person has read, so the badge counts only replies they haven't seen. */
+    private fun markRead() {
+        Octokan.markRead(lastServerId)
     }
 
     private fun apply(config: WireConfig?) {
