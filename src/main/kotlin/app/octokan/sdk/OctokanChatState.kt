@@ -87,7 +87,20 @@ class OctokanChatViewModel : ViewModel() {
     }
 
     /** Sends queued messages in order. A network failure leaves them queued for the next poll. */
+    private var flushing = false
+
+    // One sender at a time: a send and the poll loop must not post the same message twice at once.
     private suspend fun flush() {
+        if (flushing) return
+        flushing = true
+        try {
+            flushLoop()
+        } finally {
+            flushing = false
+        }
+    }
+
+    private suspend fun flushLoop() {
         val c = client ?: return
         while (queue.isNotEmpty()) {
             val next = queue.first()

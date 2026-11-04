@@ -41,6 +41,8 @@ internal class OctokanClient(private val appId: String, baseUrl: String, var tok
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             val json = runCatching { JSONObject(text) }.getOrDefault(JSONObject())
+            // 5xx is the server having a bad moment, not a refusal: the caller keeps the message queued and retries
+            if (code >= 500) throw IOException("Server error ($code)")
             if (code !in 200..299) throw ServerRefused(json.optString("error").ifBlank { "Something went wrong ($code)." })
             return json
         } finally {
