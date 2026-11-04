@@ -13,6 +13,12 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - uses: android-actions/setup-android@v3
+      # the Android SDK is preinstalled on GitHub's Linux runners
       - name: Build and test
-        run: ./gradlew assembleRelease testDebugUnitTest
+        run: |
+          chmod +x gradlew
+          ./gradlew --console=plain --no-daemon assembleRelease testDebugUnitTest 2>&1 | tee build.log || {
+            # surface compiler errors as annotations so they show up without opening the log
+            grep -E "^e: |error:|FAILED|What went wrong" -A2 build.log | head -40 | while read -r line; do echo "::error::${line}"; done
+            exit 1
+          }
