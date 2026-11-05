@@ -139,7 +139,7 @@ private fun buildRows(messages: List<OctokanMessage>, seenAt: Long?, typing: Boo
         val starts = newDay || prev!!.fromVisitor != m.fromVisitor || m.atMillis - prev.atMillis > gap
         val ends = next == null || next.fromVisitor != m.fromVisitor || !sameDay(next.atMillis, m.atMillis) || next.atMillis - m.atMillis > gap
         val status = if (i == lastMine) {
-            if (m.pending) "Sending…" else if (seenAt != null && seenAt >= m.atMillis) "✓✓ Seen" else "✓ Sent"
+            if (m.pending) "sending" else if (seenAt != null && seenAt >= m.atMillis) "seen" else "sent"
         } else null
         rows.add(ChatRow.Msg(m, starts, ends, status))
     }
@@ -152,6 +152,7 @@ private fun buildRows(messages: List<OctokanMessage>, seenAt: Long?, typing: Boo
 @Composable
 fun OctokanChat(modifier: Modifier = Modifier, onClose: (() -> Unit)? = null) {
     val model: OctokanChatViewModel = viewModel()
+    val L = remember { OctokanStrings.forLanguage(Locale.getDefault().language) }
     DisposableEffect(Unit) {
         model.start()
         onDispose { }
@@ -175,13 +176,13 @@ fun OctokanChat(modifier: Modifier = Modifier, onClose: (() -> Unit)? = null) {
                 Text(model.title, color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 if (model.typing) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("typing", color = Green, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text(L.getValue("typing"), color = Green, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         Dots(Green)
                     }
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFF22C55E)))
-                        Text("We usually reply within minutes", color = Muted, fontSize = 12.sp)
+                        Text(L.getValue("hint"), color = Muted, fontSize = 12.sp)
                     }
                 }
             }
@@ -198,7 +199,7 @@ fun OctokanChat(modifier: Modifier = Modifier, onClose: (() -> Unit)? = null) {
                     if (model.messages.isEmpty()) {
                         Spacer(Modifier.height(16.dp))
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("🐞" to "Report a problem" to "Something isn't working: ", "💡" to "Share an idea" to "I have an idea: ", "❓" to "Ask a question" to "I have a question: ").forEach { (head, prefill) ->
+                            listOf("🐞" to L.getValue("report") to L.getValue("p_report"), "💡" to L.getValue("idea") to L.getValue("p_idea"), "❓" to L.getValue("question") to L.getValue("p_question")).forEach { (head, prefill) ->
                                 val (emoji, label) = head
                                 Row(
                                     Modifier.clip(RoundedCornerShape(999.dp)).background(Soft).clickable {
@@ -237,7 +238,7 @@ fun OctokanChat(modifier: Modifier = Modifier, onClose: (() -> Unit)? = null) {
         Divider(color = Color(0xFFEEF0F4))
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f).clip(RoundedCornerShape(22.dp)).background(Soft).padding(horizontal = 16.dp, vertical = 12.dp)) {
-                if (draft.isEmpty()) Text("Write a message…", color = Color(0xFF9CA3AF), fontSize = 16.sp)
+                if (draft.isEmpty()) Text(L.getValue("ph"), color = Color(0xFF9CA3AF), fontSize = 16.sp)
                 BasicTextField(
                     value = draft,
                     onValueChange = {
@@ -286,6 +287,7 @@ private fun DayDivider(label: String) {
 
 @Composable
 private fun Bubble(row: ChatRow.Msg, accent: Color, initial: String, logo: String?) {
+    val L = remember { OctokanStrings.forLanguage(Locale.getDefault().language) }
     val m = row.m
     val mine = m.fromVisitor
     val shape = RoundedCornerShape(18.dp, 18.dp, if (mine && row.ends) 6.dp else 18.dp, if (!mine && row.ends) 6.dp else 18.dp)
@@ -299,9 +301,10 @@ private fun Bubble(row: ChatRow.Msg, accent: Color, initial: String, logo: Strin
             }
         }
         if (row.ends || row.status != null) {
-            val seen = row.status == "✓✓ Seen"
+            val seen = row.status == "seen"
+            val label = when (row.status) { "seen" -> "✓✓ " + L.getValue("seen"); "sent" -> "✓ " + L.getValue("sent"); "sending" -> L.getValue("sending"); else -> null }
             Text(
-                clock(m.atMillis) + (row.status?.let { " · $it" } ?: ""),
+                clock(m.atMillis) + (label?.let { " · $it" } ?: ""),
                 color = if (seen) Green else Color(0xFF9CA3AF),
                 fontSize = 10.sp,
                 fontWeight = if (seen) FontWeight.Bold else FontWeight.Normal,
