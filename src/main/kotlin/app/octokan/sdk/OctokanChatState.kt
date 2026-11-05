@@ -40,6 +40,7 @@ class OctokanChatViewModel : ViewModel() {
     var welcome by mutableStateOf("Hey, something not working? Tell us."); private set
     var ready by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
+    var logo by mutableStateOf<String?>(null); private set // the owner's chat image (https)
     var typing by mutableStateOf(false); private set // the owner is typing a reply
     var seenAtMillis by mutableStateOf<Long?>(null); private set // when the owner last opened the conversation
 
@@ -196,6 +197,7 @@ class OctokanChatViewModel : ViewModel() {
         config ?: return
         config.title?.let { title = it }
         config.welcome?.let { welcome = it }
+        config.logo?.takeIf { it.startsWith("https://") }?.let { logo = it }
         config.accent?.let { parseColor(it)?.let { c -> accent = c } }
     }
 

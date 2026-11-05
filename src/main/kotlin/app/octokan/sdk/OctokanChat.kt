@@ -169,7 +169,7 @@ fun OctokanChat(modifier: Modifier = Modifier, onClose: (() -> Unit)? = null) {
 
     Column(modifier.fillMaxSize().background(Color.White).imePadding().navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Avatar(model.accent, initial, 40, 17)
+            Avatar(model.accent, initial, 40, 17, model.logo)
             Spacer(Modifier.size(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(model.title, color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
@@ -221,11 +221,11 @@ fun OctokanChat(modifier: Modifier = Modifier, onClose: (() -> Unit)? = null) {
                     is ChatRow.Day -> DayDivider(row.label)
                     is ChatRow.Typing -> Pop {
                         Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Avatar(model.accent, initial, 28, 12)
+                            Avatar(model.accent, initial, 28, 12, model.logo)
                             Box(Modifier.clip(RoundedCornerShape(18.dp, 18.dp, 18.dp, 6.dp)).background(Soft).padding(horizontal = 16.dp, vertical = 14.dp)) { Dots(Muted) }
                         }
                     }
-                    is ChatRow.Msg -> Pop { Bubble(row, model.accent, initial) }
+                    is ChatRow.Msg -> Pop { Bubble(row, model.accent, initial, model.logo) }
                 }
             }
         }
@@ -263,9 +263,15 @@ fun OctokanChat(modifier: Modifier = Modifier, onClose: (() -> Unit)? = null) {
 }
 
 @Composable
-private fun Avatar(color: Color, initial: String, size: Int, textSize: Int) {
+private fun Avatar(color: Color, initial: String, size: Int, textSize: Int, logo: String? = null) {
+    // the owner's chat image when there is one, otherwise the first letter of the title
+    val bmp by produceState<ImageBitmap?>(null, logo) {
+        value = if (logo == null) null else withContext(Dispatchers.IO) { runCatching { URL(logo).openStream().use { BitmapFactory.decodeStream(it) }?.asImageBitmap() }.getOrNull() }
+    }
     Box(Modifier.size(size.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
-        Text(initial, color = Color.White, fontSize = textSize.sp, fontWeight = FontWeight.ExtraBold)
+        val image = bmp
+        if (image != null) Image(image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        else Text(initial, color = Color.White, fontSize = textSize.sp, fontWeight = FontWeight.ExtraBold)
     }
 }
 
@@ -279,14 +285,14 @@ private fun DayDivider(label: String) {
 }
 
 @Composable
-private fun Bubble(row: ChatRow.Msg, accent: Color, initial: String) {
+private fun Bubble(row: ChatRow.Msg, accent: Color, initial: String, logo: String?) {
     val m = row.m
     val mine = m.fromVisitor
     val shape = RoundedCornerShape(18.dp, 18.dp, if (mine && row.ends) 6.dp else 18.dp, if (!mine && row.ends) 6.dp else 18.dp)
     Column(Modifier.fillMaxWidth().padding(top = if (row.starts) 12.dp else 3.dp), horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
             if (!mine) {
-                if (row.ends) Avatar(accent, initial, 28, 12) else Spacer(Modifier.size(28.dp))
+                if (row.ends) Avatar(accent, initial, 28, 12, logo) else Spacer(Modifier.size(28.dp))
             }
             Box(Modifier.widthIn(max = 290.dp).alpha(if (m.pending) 0.65f else 1f).clip(shape).background(if (mine) accent else Soft).padding(horizontal = 14.dp, vertical = 9.dp)) {
                 MessageContent(m, mine)

@@ -12,7 +12,7 @@ internal data class WireAttachment(val name: String?, val type: String?, val siz
 
 internal data class WireMessage(val id: Long, val sender: String, val body: String, val clientId: String?, val at: String? = null, val kind: String = "text", val attachment: WireAttachment? = null)
 
-internal data class WireConfig(val title: String?, val accent: String?, val welcome: String?)
+internal data class WireConfig(val title: String?, val accent: String?, val welcome: String?, val logo: String? = null)
 
 internal data class InitResult(val token: String?, val config: WireConfig?, val messages: List<WireMessage>, val typing: Boolean = false, val seenAt: String? = null)
 
@@ -92,7 +92,7 @@ internal class OctokanClient(private val appId: String, baseUrl: String, var tok
         val c = json.optJSONObject("config")
         return InitResult(
             token = json.optString("token").takeIf { it.isNotBlank() && it != "null" },
-            config = c?.let { WireConfig(it.optString("title").ifBlank { null }, it.optString("accent").ifBlank { null }, it.optString("welcome").ifBlank { null }) },
+            config = c?.let { WireConfig(it.optString("title").ifBlank { null }, it.optString("accent").ifBlank { null }, it.optString("welcome").ifBlank { null }, it.optString("logo").ifBlank { null }) },
             messages = parseList(json),
             typing = json.optBoolean("typing", false),
             seenAt = json.optString("seenAt").takeIf { it.isNotBlank() && it != "null" },
